@@ -41,6 +41,7 @@ _VERSION = "1.0"
 
 _SETTINGS_FILE = os.getenv("HOME") + "/.sshplus"
 _SSHMENU_FILE = os.getenv("HOME") + "/.sshmenu"
+_TERMINAL_PROGRAM = os.environ.get('COLOR_TERM') or os.environ.get('TERM')
 
 _ABOUT_TXT = """A simple application starter as appindicator.
 
@@ -74,6 +75,8 @@ Incorporating changes from simplestarter, Benjamin Heil, http://www.bheil.net
 
 Released under GPL3, http://www.gnu.org/licenses/gpl-3.0.html"""
 
+
+
 def menuitem_response(w, item):
     if item == '_about':
         show_help_dlg(_ABOUT_TXT)
@@ -82,6 +85,8 @@ def menuitem_response(w, item):
         ind.set_menu(newmenu)
         pynotify.init("sshplus")
         pynotify.Notification("SSHplus refreshed", "Menu list was refreshed from %s" % _SETTINGS_FILE).show()
+    elif item == '_config':
+        show_config_window()
     elif item == '_quit':
         sys.exit(0)
     elif item == 'folder':
@@ -103,7 +108,183 @@ def show_help_dlg(msg, error=False):
         md.run()
     finally:
         md.destroy()
+
+def show_config_window():
+    apps = get_sshplusconfig()
+    global config_window
+    config_window = gtk.Window()
+    config_window.set_title("Edit List")
+    config_window.set_usize(350, 500)
+    config_window.set_position(gtk.WIN_POS_CENTER)
+
+    #List of connections
+    vbox_list = gtk.VBox()
+    listbox = gtk.List()
+    global selected
+    for app in apps:
+        label = gtk.Label(app['name'])
+        list_item = gtk.ListItem()
+        list_item.add(label)
+        list_item.connect("select", set_selected_item, app['name'])
+        label.show()
+        listbox.add(list_item)
+    #Options
+    vbox_options = gtk.VBox()
+    #New Item Button
+    hbox_new = gtk.HBox()
+    button_new = gtk.Button("New")
+    button_new.set_usize(50, 100)
+    button_new.connect("clicked", edit_menu_item, True)
+    hbox_new.add(button_new)
+    vbox_options.add(hbox_new)
+    #Edit Button
+    hbox_edit = gtk.HBox()
+    button_edit = gtk.Button("Edit")
+    button_edit.set_usize(50, 100)
+    button_edit.connect("clicked", edit_menu_item, False)
+    hbox_edit.add(button_edit)
+    vbox_options.add(hbox_edit)
+    #Remove Button
+    hbox_rm = gtk.HBox()
+    button_rm = gtk.Button("Remove")
+    button_rm.set_usize(50, 100)
+    button_rm.connect("clicked", remove_menu_item)
+    hbox_rm.add(button_rm)
+    vbox_options.add(hbox_rm)
+    #Add spacing
+    empty_hbox = gtk.HBox()
+    empty_hbox.set_usize(50, 485)
+    vbox_options.add(empty_hbox)
+
+    #layout list of apps
+    scrollbox = gtk.ScrolledWindow()
+    scrollbox.set_usize(250, 150)
+    scrollbox.add_with_viewport(listbox)
+
+    vbox_list.add(scrollbox)
+    hbox = gtk.HBox()
+    hbox.pack_start(vbox_list)
+    hbox.pack_start(vbox_options)
+
+    config_window.add(hbox)
+
+    config_window.show_all()
     
+def set_selected_item(self, name):
+    global selected
+    selected = name
+
+def edit_menu_item(self, new):
+    global edit_window 
+    edit_window = gtk.Window()
+    edit_window.set_position(gtk.WIN_POS_CENTER)
+    vbox = gtk.VBox()
+    label_name = gtk.Label("Name: ")
+    text_name = gtk.Entry()
+    label_cmd = gtk.Label("Command: ")
+    text_cmd = gtk.Entry()
+    label_args = gtk.Label("Arguments: ")
+    text_args = gtk.Entry()
+    hbox_name = gtk.HBox(True)
+    hbox_cmd = gtk.HBox(True)
+    hbox_args = gtk.HBox(True)
+    vbox_name_label = gtk.VBox(True)
+    vbox_name_label.add(label_name)
+    vbox_name_label.set_properties()
+    vbox_name_text = gtk.VBox(True)
+    vbox_name_text.add(text_name)
+    hbox_name.add(vbox_name_label)
+    hbox_name.add(vbox_name_text)
+    vbox_cmd_label = gtk.VBox(True)
+    vbox_cmd_label.add(label_cmd)
+    vbox_cmd_text = gtk.VBox(True)
+    vbox_cmd_text.add(text_cmd)
+    hbox_cmd.add(vbox_cmd_label)
+    hbox_cmd.add(vbox_cmd_text)
+    vbox_args_label = gtk.VBox(True)
+    vbox_args_label.add(label_args)
+    vbox_args_text = gtk.VBox(True)
+    vbox_args_text.add(text_args)
+    hbox_args.add(vbox_args_label)
+    hbox_args.add(vbox_args_text)
+    if new == True:
+        edit_window.set_title("Add")
+        if _TERMINAL_PROGRAM:
+            text_cmd.set_text(_TERMINAL_PROGRAM)
+        else:
+            text_cmd.set_text("gnome-terminal")
+        text_args.set_text("-x ssh user@host")
+    else:
+        global selected
+        apps = get_sshplusconfig()
+        for app in apps:
+            if app['name'] == selected:
+                text_name.set_text(app['name'])
+                text_cmd.set_text(app['cmd'])
+                text_args.set_text(" ".join(app['args']))
+        edit_window.set_title("Edit")
+        
+
+    ok_button = gtk.Button("Save")
+    ok_button.connect("clicked", save_item, text_name, text_cmd, text_args)
+    vbox.add(hbox_name)
+    vbox.add(hbox_cmd)
+    vbox.add(hbox_args)
+    vbox.add(ok_button)
+
+    edit_window.add(vbox)
+    edit_window.show_all()
+    
+def remove_menu_item(self):
+    #Popup notifcation asking for confirmation
+    window = gtk.Window()
+    dialog = gtk.MessageDialog(window, gtk.DIALOG_MODAL,
+                              gtk.MESSAGE_INFO, gtk.BUTTONS_YES_NO,
+                              "Are you sure you want to delete entry?")
+    dialog.set_title(":(")
+
+    response = dialog.run()
+    dialog.destroy()
+    if response == gtk.RESPONSE_YES:
+        hostlist = get_sshplusconfig()
+        for item in hostlist:
+            if item['name'] == selected:     
+                index = hostlist.index(item)
+                hostlist.pop(index)
+                with open(_SETTINGS_FILE, 'wt') as hostfile:
+                    for item in hostlist:
+                        hostfile.write(str(item['name']) + '|' + str(item['cmd']) + '|' + str(" ".join(item['args'])) + '\n')
+    position = config_window.get_position()
+    config_window.destroy()
+    config_window.move(position[0], position[1])
+    show_config_window()   
+
+def save_item(self, nametxtbox, cmdtxtbox, argstxtbox):
+    name = nametxtbox.get_text()
+    cmd = cmdtxtbox.get_text()
+    args = argstxtbox.get_text().split()
+    newitem = {'name': name, 'cmd': cmd, 'args': args}
+    hostlist = get_sshplusconfig()
+    found = False
+    for item in hostlist:
+        if item['name'] == name:
+            found = True
+            index = hostlist.index(item)
+            hostlist.pop(index)
+            hostlist.insert(index, newitem)
+    if not found:
+        hostlist.append(newitem)
+
+    with open(_SETTINGS_FILE, 'wt') as hostfile:
+        for item in hostlist:
+            hostfile.write(str(item['name']) + '|' + str(item['cmd']) + '|' + str(" ".join(item['args'])) + '\n')
+
+    hostfile.close()
+    edit_window.destroy()
+    config_window.destroy()
+    show_config_window()
+    
+
 def add_separator(menu):
     separator = gtk.SeparatorMenuItem()
     separator.show()
@@ -220,9 +401,12 @@ def get_sshplusconfig():
 
 def build_menu():
     if not os.path.exists(_SETTINGS_FILE) and not os.path.exists(_SSHMENU_FILE) :
-        show_help_dlg("<b>ERROR: No .sshmenu or .sshplus file found in home directory</b>\n\n%s" % \
-             _ABOUT_TXT, error=True)
-        sys.exit(1)
+        alert = gtk.MessageDialog(parent=None, flags=0, type=gtk.MESSAGE_INFO, buttons=gtk.BUTTONS_OK)
+        alert.set_markup("<b>ERROR: No .sshmenu or .sshplus file found in home directory</b>\n\n.sshplus file will be created, please use menu once you hit OK to add menu options.")
+        alert.run()
+        open(_SETTINGS_FILE, "a").close()
+        show_config_window()
+        alert.do_close(alert)
 
     app_list = get_sshplusconfig()
 
@@ -251,6 +435,7 @@ def build_menu():
 
     add_separator(menu)
     add_menu_item(menu, 'Refresh', '_refresh')
+    add_menu_item(menu, 'Edit List', '_config')
     add_menu_item(menu, 'About', '_about')
     add_separator(menu)
     add_menu_item(menu, 'Quit', '_quit')
